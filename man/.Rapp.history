@@ -1,0 +1,67 @@
+library(Rvoterdistance)
+?Rvoterdistance
+?nearest_dbox
+data(king_dbox)
+objects()
+data(dbox)
+head(dbox)
+head(king_geo)
+nearest_dbox (king_geo$Residence_Addresses_Latitude, king_geo$Residence_Addresses_Longitude,#
+				dbox$lat, dbox$long)
+hav_calc <- nearest_dbox (king_geo$Residence_Addresses_Latitude, king_geo$Residence_Addresses_Longitude,#
+				dbox$lat, dbox$long)
+hav_calc / 1609.34
+hist ( hav_calc / 1609.34)
+ggplot() + #
+	geom_histogram(aes(hav_calc/1609.34))
+library(ggplot)#
+ggplot() + #
+	geom_histogram(aes(hav_calc/1609.34))
+library(ggplot2)
+ggplot() + #
+	geom_histogram(aes(hav_calc/1609.34))
+library(eiCompare)
+?eiCompare
+library(Rvoterdistance)
+args(distanceEarth)
+?double
+data(king_dbox)
+objects()
+head(king_geo)
+head(dbox)
+distanceEarth(king_geo[1,2], king_geo[1,1], dbox$lat[1], dbox$long[1])
+distanceEarth(king_geo[1,2], king_geo[1,1], dbox$lat[1], dbox$long[1])/1609
+distanceEarth(king_geo$Residence_Addresses_Latitude[1], king_geo$Residence_Addresses_Longitude[1], dbox$lat[1], dbox$long[1])
+args(distanceEarth)
+library(Rvoterdistance)
+?Rvoterdistance
+example(dist_mile)
+example(dist_km)
+example(nearest_dbox)
+?install.packages
+Rversion()
+RVersion
+RVersion()
+R.Version()
+# Distance from voters to drop boxes#
+data(king_dbox)#
+#
+# Haversine distance between voter and drop boxes, King County#
+hav_calc <- nearest_dbox (king_geo$Residence_Addresses_Latitude, king_geo$Residence_Addresses_Longitude, dbox$lat, dbox$long)#
+#
+summary(hav_calc)#
+#
+# Read in Mecklenburg County data#
+data(meck_ev)#
+#
+# Voter and early vote location, Mecklenburg County#
+hav_meck <- nearest_dbox (voter_meck$lat, voter_meck$long,#
+				early_meck$lat, early_meck$long)#
+#
+summary(hav_meck)
+?nearest_dbox
+?eiCompare
+library(eiCompare)
+?eiCompare
+?Rvoterdistance
+?eiCompare
