@@ -1,4 +1,5 @@
-# Rvoterdistance
+# Rvoterdistance <img src="man/figures/logo.png" align="right" height="139" />
+
 [![R build status](https://github.com/RPVote/Rvoterdistance/workflows/R-CMD-check/badge.svg)](https://github.com/RPVote/Rvoterdistance/actions?workflow=R-CMD-check)
 [![Style status](https://github.com/RPVote/Rvoterdistance/workflows/Styler/badge.svg)](https://github.com/RPVote/Rvoterdistance/actions?workflow=Styler)
 
