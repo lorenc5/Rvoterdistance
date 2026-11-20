@@ -236,6 +236,127 @@
 }
 
 
+#' Format k-nearest routing output with time columns
+#' @noRd
+.format_knearest_result_time <- function(raw, k, voters, locations,
+                                         append_data) {
+  n_voters <- nrow(raw$distances)
+  k <- ncol(raw$distances)
+
+  if (k == 1L) {
+    time_s <- as.numeric(raw$distances)
+    loc_idx <- as.integer(raw$indices)
+
+    out <- data.frame(
+      voter_id = seq_len(n_voters),
+      time_seconds = time_s,
+      time_minutes = time_s / 60.0,
+      time_hours = time_s / 3600.0,
+      stringsAsFactors = FALSE
+    )
+
+    if (append_data) {
+      voter_df <- .as_plain_df(voters)
+      loc_df <- .as_plain_df(locations)
+      out <- cbind(
+        voter_df, loc_df[loc_idx, , drop = FALSE],
+        out[, -1, drop = FALSE]
+      )
+      rownames(out) <- NULL
+    }
+
+    return(out)
+  }
+
+  # k > 1: long format
+  voter_ids <- rep(seq_len(n_voters), each = k)
+  ranks <- rep(seq_len(k), times = n_voters)
+  time_s <- as.numeric(t(raw$distances))
+  loc_idx <- as.integer(t(raw$indices))
+
+  out <- data.frame(
+    voter_id = voter_ids,
+    rank = ranks,
+    location_id = loc_idx,
+    time_seconds = time_s,
+    time_minutes = time_s / 60.0,
+    time_hours = time_s / 3600.0,
+    stringsAsFactors = FALSE
+  )
+
+  if (append_data) {
+    voter_df <- .as_plain_df(voters)
+    loc_df <- .as_plain_df(locations)
+    voter_expanded <- voter_df[voter_ids, , drop = FALSE]
+    loc_expanded <- loc_df[loc_idx, , drop = FALSE]
+    out <- cbind(
+      voter_expanded, loc_expanded,
+      out[, c("rank", "time_seconds", "time_minutes", "time_hours")]
+    )
+    rownames(out) <- NULL
+  }
+
+  out
+}
+
+
+#' Format threshold routing output with time columns
+#' @noRd
+.format_threshold_result_time <- function(raw, voters, locations,
+                                          append_data) {
+  n_voters <- length(raw)
+  pieces <- vector("list", n_voters)
+
+  for (i in seq_len(n_voters)) {
+    entry <- raw[[i]]
+    times <- entry$distances
+    idxs <- entry$indices
+
+    if (length(times) == 0L) {
+      pieces[[i]] <- data.frame(
+        voter_id = i, rank = NA_integer_, location_id = NA_integer_,
+        time_seconds = NA_real_, time_minutes = NA_real_,
+        time_hours = NA_real_,
+        stringsAsFactors = FALSE
+      )
+    } else {
+      ord <- order(times)
+      pieces[[i]] <- data.frame(
+        voter_id = i,
+        rank = seq_along(times),
+        location_id = idxs[ord],
+        time_seconds = times[ord],
+        time_minutes = times[ord] / 60.0,
+        time_hours = times[ord] / 3600.0,
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+
+  out <- do.call(rbind, pieces)
+
+  if (append_data) {
+    voter_df <- .as_plain_df(voters)
+    loc_df <- .as_plain_df(locations)
+    voter_expanded <- voter_df[out$voter_id, , drop = FALSE]
+    non_na_locs <- !is.na(out$location_id)
+    loc_expanded <- loc_df[1, , drop = FALSE][rep(NA_integer_, nrow(out)), ,
+      drop = FALSE
+    ]
+    loc_expanded[non_na_locs, ] <- loc_df[out$location_id[non_na_locs], ,
+      drop = FALSE
+    ]
+    out <- cbind(
+      voter_expanded, loc_expanded,
+      out[, c("rank", "time_seconds", "time_minutes", "time_hours")]
+    )
+    rownames(out) <- NULL
+  }
+
+  out
+}
+
+
 #' Convert sf or tibble to plain data.frame, dropping geometry
 #' @noRd
 .as_plain_df <- function(x) {

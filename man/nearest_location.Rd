@@ -13,7 +13,10 @@ nearest_location(
   max_dist = NULL,
   units = c("km", "miles", "meters"),
   append_data = TRUE,
-  progress = FALSE
+  progress = FALSE,
+  method = c("haversine", "driving", "walking", "cycling"),
+  measure = c("distance", "time"),
+  network = NULL
 )
 }
 \arguments{
@@ -37,8 +40,9 @@ in \code{locations}. Ignored if \code{locations} is an \code{sf} object.}
 Default \code{1}.}
 
 \item{max_dist}{Numeric or \code{NULL}. If not \code{NULL}, return all locations
-within this distance of each voter. Units controlled by \code{units}.
-Overrides \code{k}.}
+within this distance of each voter. Units controlled by \code{units} (for
+Haversine and road-network distance) or interpreted as minutes (for
+road-network time). Overrides \code{k}.}
 
 \item{units}{Character. One of \code{"km"}, \code{"miles"}, or \code{"meters"}.
 Default \code{"km"}.}
@@ -49,17 +53,33 @@ location row.}
 
 \item{progress}{Logical. If \code{TRUE}, print progress for large computations.
 Default \code{FALSE}.}
+
+\item{method}{Character. One of \code{"haversine"} (default), \code{"driving"},
+\code{"walking"}, or \code{"cycling"}. Non-haversine methods use road-network
+routing via \pkg{dodgr} (required) and optionally \pkg{cppRouting} for
+faster computation.}
+
+\item{measure}{Character. One of \code{"distance"} (default) or \code{"time"}.
+\code{"time"} returns travel time (seconds, minutes, hours) and requires a
+road-network method.}
+
+\item{network}{An optional pre-built network object from
+\code{\link[=prepare_network]{prepare_network()}}. Avoids re-downloading the street network on
+repeated calls.}
 }
 \value{
-A data frame. If \code{k = 1} and \code{max_dist} is \code{NULL}: one row per
-voter with distance columns (\code{distance_m}, \code{distance_km},
-\code{distance_miles}). If \code{k > 1} or \code{max_dist} is not \code{NULL}: one row per
-voter-location pair with a \code{rank} column.
+A data frame. When \code{measure = "distance"}: distance columns
+(\code{distance_m}, \code{distance_km}, \code{distance_miles}). When
+\code{measure = "time"}: time columns (\code{time_seconds}, \code{time_minutes},
+\code{time_hours}). If \code{k = 1} and \code{max_dist} is \code{NULL}: one row per voter.
+If \code{k > 1} or \code{max_dist} is not \code{NULL}: one row per voter-location pair
+with a \code{rank} column.
 }
 \description{
 Calculates the distance between each voter and a set of polling/drop box
-locations using the Haversine formula. Can return the single nearest
-location, the k nearest, or all locations within a distance threshold.
+locations using the Haversine formula or road-network routing. Can return
+the single nearest location, the k nearest, or all locations within a
+distance threshold.
 }
 \examples{
 data(meck_ev)
@@ -86,4 +106,33 @@ result_10km <- nearest_location(voter_meck, early_meck,
   max_dist = 10, units = "km"
 )
 head(result_10km)
+
+\dontrun{
+# Road-network driving distance (requires dodgr package)
+result_drive <- nearest_location(voter_meck[1:10, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving"
+)
+
+# Walking travel time
+result_time <- nearest_location(voter_meck[1:10, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "walking", measure = "time"
+)
+
+# Pre-built network for repeated calls
+net <- prepare_network(
+  voters = voter_meck, locations = early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  mode = "driving"
+)
+result <- nearest_location(voter_meck[1:10, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", network = net
+)
+}
 }

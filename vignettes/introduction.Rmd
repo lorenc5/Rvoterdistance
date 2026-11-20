@@ -26,6 +26,8 @@ great-circle formula, implemented in C++ for speed. The package supports:
 - **Distance threshold**: find all locations within a specified radius
 - **Boundary distance**: find how far each voter lives from a geographic
   boundary (state border, river, district line, etc.)
+- **Road-network routing**: driving, walking, and cycling distances and
+  travel times via optional `dodgr` and `cppRouting` backends
 - **sf integration**: pass `sf` POINT geometries directly
 
 ## Installation
@@ -277,14 +279,138 @@ d_m <- dist_to_boundary(voters_u, border,
 data.frame(km = round(d_km, 2), miles = round(d_mi, 2), meters = round(d_m, 1))
 ```
 
+## Road-Network Routing
+
+The examples above all use the **Haversine** (straight-line) distance.
+For realistic driving, walking, or cycling distances and travel times,
+set the `method` parameter to `"driving"`, `"walking"`, or `"cycling"`.
+This requires the optional `dodgr` package. Installing `cppRouting` as
+well gives a large speedup on big networks.
+
+```{r routing-install, eval = FALSE}
+install.packages("dodgr")
+install.packages("cppRouting") # optional, for speed
+```
+
+### Driving distance
+
+```{r routing-driving, eval = requireNamespace("dodgr", quietly = TRUE)}
+result_drive <- nearest_location(
+  voter_meck[1:10, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving"
+)
+
+head(result_drive[, c("distance_m", "distance_km", "distance_miles")])
+```
+
+Road distances are always at least as large as (and usually larger than)
+the corresponding Haversine distance, because roads are not straight
+lines.
+
+### Walking travel time
+
+Set `measure = "time"` to get travel time instead of distance.
+The output columns are `time_seconds`, `time_minutes`, and `time_hours`:
+
+```{r routing-time, eval = requireNamespace("dodgr", quietly = TRUE)}
+result_walk <- nearest_location(
+  voter_meck[1:10, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "walking",
+  measure = "time"
+)
+
+head(result_walk[, c("time_seconds", "time_minutes", "time_hours")])
+```
+
+### k-nearest and threshold modes
+
+Road-network routing supports the same `k` and `max_dist` options as
+Haversine. When `measure = "time"`, the `max_dist` threshold is
+interpreted as **minutes**:
+
+```{r routing-k3, eval = requireNamespace("dodgr", quietly = TRUE)}
+# 3 nearest driving locations
+result_k3_drive <- nearest_location(
+  voter_meck[1:5, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", k = 3,
+  append_data = FALSE
+)
+
+head(result_k3_drive, 9)
+```
+
+```{r routing-threshold, eval = requireNamespace("dodgr", quietly = TRUE)}
+# All locations within 20 minutes driving time
+result_20min <- nearest_location(
+  voter_meck[1:5, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", measure = "time",
+  max_dist = 20,
+  append_data = FALSE
+)
+
+head(result_20min, 10)
+```
+
+### Pre-building the network
+
+Downloading the street network is the slowest step. If you need to
+make multiple `nearest_location()` calls (e.g., different subsets of
+voters, or comparing driving vs. walking), use `prepare_network()` to
+download once and reuse:
+
+```{r routing-network, eval = requireNamespace("dodgr", quietly = TRUE)}
+net <- prepare_network(
+  voters = voter_meck, locations = early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  mode = "driving"
+)
+
+# Reuse the network for multiple calls
+result_a <- nearest_location(
+  voter_meck[1:10, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", network = net
+)
+
+result_b <- nearest_location(
+  voter_meck[11:20, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", network = net
+)
+```
+
+You can also save the network to disk with `saveRDS()` and reload it
+later to avoid re-downloading entirely:
+
+```{r routing-save, eval = FALSE}
+saveRDS(net, "meck_driving_network.rds")
+
+# In a later session:
+net <- readRDS("meck_driving_network.rds")
+```
+
 ## Performance
 
 The Haversine computation runs in C++ and uses partial sorting
 (`std::nth_element`) for k-nearest queries, giving O(n) per voter
 instead of O(n log n). The `dist_to_boundary()` function uses
 bounding-box pruning to skip distant boundary segments, avoiding
-unnecessary cross-track distance calculations. For large voter files,
-enable progress reporting:
+unnecessary cross-track distance calculations. For road-network
+routing, installing `cppRouting` alongside `dodgr` enables contraction
+hierarchies and the PHAST algorithm, which can be 100x+ faster than
+`dodgr` alone on large networks. For large voter files, enable
+progress reporting:
 
 ```{r progress, eval = FALSE}
 result <- nearest_location(

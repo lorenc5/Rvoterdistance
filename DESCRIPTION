@@ -1,13 +1,16 @@
 Package: Rvoterdistance
 Type: Package
 Title: Voter Distance to Polling Locations and Geographic Boundaries
-Version: 2.1.0
+Version: 2.2.0
 Authors@R: person("Loren", "Collingwood", email = "lcollingwood@unm.edu",
            role = c("aut", "cre"))
 Description: Calculates the distance between each voter in a voter file
     (given lat/long coordinates or sf point geometries) and multiple
     polling or vote-by-mail drop box locations. Returns nearest location,
     k-nearest locations, or all locations within a distance threshold.
+    Supports straight-line Haversine distances (default) as well as
+    road-network driving, walking, and cycling distances and travel times
+    via optional 'dodgr' and 'cppRouting' backends.
     Also computes minimum distance from voters to geographic boundaries
     such as rivers, state borders, or district lines provided as 'sf'
     line or polygon geometries. Core computation uses the Haversine
@@ -25,6 +28,8 @@ Suggests:
     sf,
     ggplot2,
     rdrobust,
+    dodgr,
+    cppRouting,
     testthat (>= 3.0.0),
     knitr,
     rmarkdown

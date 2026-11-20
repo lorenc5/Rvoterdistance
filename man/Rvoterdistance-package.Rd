@@ -6,7 +6,9 @@
 \alias{Rvoterdistance-package}
 \title{Rvoterdistance: Voter Distance to Polling Locations and Geographic Boundaries}
 \description{
-Calculates the distance between each voter in a voter file (given lat/long coordinates or sf point geometries) and multiple polling or vote-by-mail drop box locations. Returns nearest location, k-nearest locations, or all locations within a distance threshold. Also computes minimum distance from voters to geographic boundaries such as rivers, state borders, or district lines provided as 'sf' line or polygon geometries. Core computation uses the Haversine formula and spherical cross-track distance implemented in C++ via 'Rcpp'.
+\if{html}{\figure{logo.png}{options: style='float: right' alt='logo' width='120'}}
+
+Calculates the distance between each voter in a voter file (given lat/long coordinates or sf point geometries) and multiple polling or vote-by-mail drop box locations. Returns nearest location, k-nearest locations, or all locations within a distance threshold. Supports straight-line Haversine distances (default) as well as road-network driving, walking, and cycling distances and travel times via optional 'dodgr' and 'cppRouting' backends. Also computes minimum distance from voters to geographic boundaries such as rivers, state borders, or district lines provided as 'sf' line or polygon geometries. Core computation uses the Haversine formula and spherical cross-track distance implemented in C++ via 'Rcpp'.
 }
 \seealso{
 Useful links:

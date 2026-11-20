@@ -13,6 +13,7 @@ Calculates the geographic distance between voters in a voter file and multiple p
 - **sf integration**: pass `sf` POINT geometries directly with automatic CRS transformation to WGS-84
 - **Progress reporting**: optional progress output for large voter files
 - **Units**: results in meters, kilometers, and miles
+- **Road-network routing**: driving, walking, and cycling distances and travel times via optional `dodgr` and `cppRouting` backends
 
 ## Installation
 
@@ -52,7 +53,8 @@ result_5mi <- nearest_location(voter_meck, early_meck,
 
 | Function | Description |
 |---|---|
-| `nearest_location()` | Main entry point. Supports k-nearest, distance threshold, sf objects. |
+| `nearest_location()` | Main entry point. Supports k-nearest, distance threshold, sf objects, and road-network routing. |
+| `prepare_network()` | Download and cache a road network for repeated routing calls. |
 | `dist_km()` | Minimum distance to nearest location in kilometers. |
 | `dist_mile()` | Minimum distance to nearest location in miles. |
 | `haversine()` | Single-pair great-circle distance with configurable units. |
@@ -68,6 +70,46 @@ result <- nearest_location(voters_sf, locs_sf)
 ```
 
 If the CRS is not WGS-84 (EPSG:4326), coordinates are automatically transformed.
+
+## Road-Network Routing
+
+For realistic driving, walking, or cycling distances and travel times, install the optional `dodgr` package (and optionally `cppRouting` for faster computation on large datasets):
+
+```r
+install.packages("dodgr")
+install.packages("cppRouting") # optional, for speed
+```
+
+Then use the `method` parameter:
+
+```r
+# Driving distance to nearest location
+result <- nearest_location(voter_meck, early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving")
+
+# Walking travel time
+result_time <- nearest_location(voter_meck[1:100, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "walking", measure = "time")
+
+# Pre-build network for repeated calls
+net <- prepare_network(
+  voters = voter_meck, locations = early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  mode = "driving")
+
+result1 <- nearest_location(voter_meck[1:100, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", network = net)
+
+# Save network to disk to avoid re-downloading
+saveRDS(net, "meck_driving_network.rds")
+```
 
 ## Included Data
 
