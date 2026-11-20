@@ -80,35 +80,48 @@ install.packages("dodgr")
 install.packages("cppRouting") # optional, for speed
 ```
 
-Then use the `method` parameter:
+Then use the `method` parameter. **Note:** calling `nearest_location()` with a road-network method but without a pre-built network will download the street network from OpenStreetMap and build a routing graph on every call, which can be slow. For quick one-off exploration this is fine, but for any repeated use, build the network once with `prepare_network()` as shown below.
 
 ```r
-# Driving distance to nearest location
-result <- nearest_location(voter_meck, early_meck,
+# Driving distance (slow first call -- downloads street network)
+result <- nearest_location(voter_meck[1:10, ], early_meck,
   voter_coords = c("lat", "long"),
   location_coords = c("lat", "long"),
   method = "driving")
 
-# Walking travel time
-result_time <- nearest_location(voter_meck[1:100, ], early_meck,
+# Walking travel time (also slow without a cached network)
+result_time <- nearest_location(voter_meck[1:10, ], early_meck,
   voter_coords = c("lat", "long"),
   location_coords = c("lat", "long"),
   method = "walking", measure = "time")
+```
 
-# Pre-build network for repeated calls
+**Recommended workflow:** use `prepare_network()` to download and build the routing graph once. This is the slow step (network download + contraction hierarchy construction), but you only need to do it once. All subsequent `nearest_location()` calls that pass the network object are fast.
+
+```r
+# Build once (slow -- downloads OSM data and builds routing graph)
 net <- prepare_network(
   voters = voter_meck, locations = early_meck,
   voter_coords = c("lat", "long"),
   location_coords = c("lat", "long"),
   mode = "driving")
 
+# All subsequent calls are fast
 result1 <- nearest_location(voter_meck[1:100, ], early_meck,
   voter_coords = c("lat", "long"),
   location_coords = c("lat", "long"),
   method = "driving", network = net)
 
-# Save network to disk to avoid re-downloading
+result2 <- nearest_location(voter_meck, early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", network = net)
+
+# Save network to disk so you never need to download again
 saveRDS(net, "meck_driving_network.rds")
+
+# In a later session:
+net <- readRDS("meck_driving_network.rds")
 ```
 
 ## Included Data

@@ -292,7 +292,20 @@ install.packages("dodgr")
 install.packages("cppRouting") # optional, for speed
 ```
 
+**A note on speed:** Road-network routing requires downloading the
+street network from OpenStreetMap and building a routing graph. When
+you call `nearest_location()` with a road-network method but *without*
+a pre-built network, this download and graph construction happens on
+every call, which can be noticeably slow. For quick one-off
+exploration this is fine, but for any repeated or production use, the
+recommended approach is to build the network once with
+`prepare_network()` and pass it to all subsequent calls (see
+[Pre-building the network] below).
+
 ### Driving distance
+
+The following example will download the street network on the fly.
+This is convenient but slow --- see the note above.
 
 ```{r routing-driving, eval = FALSE}
 result_drive <- nearest_location(
@@ -359,14 +372,17 @@ result_20min <- nearest_location(
 head(result_20min, 10)
 ```
 
-### Pre-building the network
+### Pre-building the network (recommended)
 
-Downloading the street network is the slowest step. If you need to
-make multiple `nearest_location()` calls (e.g., different subsets of
-voters, or comparing driving vs. walking), use `prepare_network()` to
-download once and reuse:
+The `prepare_network()` function downloads the street network and
+builds the routing graph (including cppRouting contraction hierarchies
+if that package is installed). **This is the slow step**, but you only
+need to do it once. The resulting network object can be reused across
+any number of `nearest_location()` calls, and saved to disk with
+`saveRDS()` so you never need to download again.
 
 ```{r routing-network, eval = FALSE}
+# Build once (slow -- downloads OSM data and builds routing graph)
 net <- prepare_network(
   voters = voter_meck, locations = early_meck,
   voter_coords = c("lat", "long"),
@@ -374,7 +390,7 @@ net <- prepare_network(
   mode = "driving"
 )
 
-# Reuse the network for multiple calls
+# All subsequent calls are fast
 result_a <- nearest_location(
   voter_meck[1:10, ], early_meck,
   voter_coords = c("lat", "long"),
@@ -388,15 +404,22 @@ result_b <- nearest_location(
   location_coords = c("lat", "long"),
   method = "driving", network = net
 )
+
+# Even with the full voter file, this is fast with a cached network
+result_all <- nearest_location(
+  voter_meck, early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", network = net
+)
 ```
 
-You can also save the network to disk with `saveRDS()` and reload it
-later to avoid re-downloading entirely:
+Save the network to disk so you never need to re-download:
 
 ```{r routing-save, eval = FALSE}
 saveRDS(net, "meck_driving_network.rds")
 
-# In a later session:
+# In a later R session:
 net <- readRDS("meck_driving_network.rds")
 ```
 
