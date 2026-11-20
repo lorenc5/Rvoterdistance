@@ -53,7 +53,7 @@ re-downloading.
 }
 \details{
 Requires the \pkg{dodgr} package. If \pkg{cppRouting} is also installed,
-a contraction hierarchy is built for faster matrix computation.
+a contraction hierarchy is pre-built for faster matrix computation.
 }
 \examples{
 \dontrun{

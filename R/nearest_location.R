@@ -150,15 +150,25 @@ nearest_location <- function(voters,
     profile <- .method_to_profile(method)
 
     # Build or validate network
+    cpp_cache <- NULL
     if (!is.null(network)) {
-      graph <- .validate_network(network, profile)
+      net_obj <- .validate_network(network, profile)
+      graph <- net_obj$graph
+      cpp_cache <- net_obj$cpp_cache
     } else {
+      message(
+        "Downloading and building street network (this may be slow).\n",
+        "Use prepare_network() to build once and reuse across calls."
+      )
       bbox <- .compute_bbox(v_coords, l_coords, pad = 0.05)
       graph <- .build_dodgr_graph(bbox, profile, quiet = !progress)
     }
 
     # Compute full distance/time matrix
-    mat <- .dodgr_route_matrix(v_coords, l_coords, graph, measure, progress)
+    mat <- .dodgr_route_matrix(
+      v_coords, l_coords, graph, measure, progress,
+      cpp_cache = cpp_cache
+    )
 
     # Dispatch to k-nearest or threshold mode
     if (!is.null(max_dist)) {

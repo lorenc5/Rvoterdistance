@@ -6,7 +6,7 @@
 #' re-downloading.
 #'
 #' Requires the \pkg{dodgr} package. If \pkg{cppRouting} is also installed,
-#' a contraction hierarchy is built for faster matrix computation.
+#' a contraction hierarchy is pre-built for faster matrix computation.
 #'
 #' @param bbox Numeric vector of length 4: `c(xmin, ymin, xmax, ymax)` in
 #'   WGS-84 lon/lat. If `NULL`, computed from `voters` and `locations` with
@@ -68,10 +68,17 @@ prepare_network <- function(bbox = NULL,
     bbox <- .compute_bbox(v_coords, l_coords, pad)
   }
 
+  if (!quiet) message("Downloading street network from OpenStreetMap...")
   graph <- .build_dodgr_graph(bbox, profile, quiet)
 
+  # Pre-build cppRouting structures if available
+  cpp_cache <- .build_cpprouting_cache(graph, quiet)
+
   structure(
-    list(graph = graph, mode = mode, profile = profile, bbox = bbox),
+    list(
+      graph = graph, mode = mode, profile = profile,
+      bbox = bbox, cpp_cache = cpp_cache
+    ),
     class = "rvd_network"
   )
 }
@@ -139,6 +146,54 @@ prepare_network <- function(bbox = NULL,
 }
 
 
+#' Pre-build cppRouting contraction hierarchies for both distance and time
+#' @return List with contracted_dist, contracted_time, verts, or NULL if
+#'   cppRouting is not available.
+#' @noRd
+.build_cpprouting_cache <- function(graph, quiet = FALSE) {
+  if (!requireNamespace("cppRouting", quietly = TRUE)) {
+    return(NULL)
+  }
+
+  if (!quiet) message("Building contraction hierarchies (cppRouting)...")
+
+  verts <- dodgr::dodgr_vertices(graph)
+
+  # Distance contraction hierarchy
+  edges_dist <- data.frame(
+    from = graph$from_id,
+    to = graph$to_id,
+    weight = graph$d_weighted,
+    stringsAsFactors = FALSE
+  )
+  valid_dist <- is.finite(edges_dist$weight) & edges_dist$weight >= 0
+  edges_dist <- edges_dist[valid_dist, ]
+  cpp_graph_dist <- cppRouting::makegraph(edges_dist, directed = TRUE)
+  contracted_dist <- cppRouting::cpp_contract(cpp_graph_dist)
+
+  # Time contraction hierarchy
+  contracted_time <- NULL
+  if ("time_weighted" %in% names(graph)) {
+    edges_time <- data.frame(
+      from = graph$from_id,
+      to = graph$to_id,
+      weight = graph$time_weighted,
+      stringsAsFactors = FALSE
+    )
+    valid_time <- is.finite(edges_time$weight) & edges_time$weight >= 0
+    edges_time <- edges_time[valid_time, ]
+    cpp_graph_time <- cppRouting::makegraph(edges_time, directed = TRUE)
+    contracted_time <- cppRouting::cpp_contract(cpp_graph_time)
+  }
+
+  list(
+    contracted_dist = contracted_dist,
+    contracted_time = contracted_time,
+    verts = verts
+  )
+}
+
+
 #' Validate a user-supplied network object
 #' @noRd
 .validate_network <- function(network, profile) {
@@ -154,7 +209,7 @@ prepare_network <- function(bbox = NULL,
       call. = FALSE
     )
   }
-  network$graph
+  network
 }
 
 
@@ -165,54 +220,50 @@ prepare_network <- function(bbox = NULL,
 #' @param graph A weighted dodgr graph.
 #' @param measure `"distance"` or `"time"`.
 #' @param progress Logical.
+#' @param cpp_cache Optional pre-built cppRouting cache from prepare_network().
 #' @return Numeric matrix: rows = voters, columns = locations. Values are
 #'   meters (distance) or seconds (time).
 #' @noRd
 .dodgr_route_matrix <- function(v_coords, l_coords, graph, measure,
-                                progress) {
+                                progress, cpp_cache = NULL) {
   # dodgr expects lon/lat column order
   from_ll <- cbind(lon = v_coords[, 2], lat = v_coords[, 1])
   to_ll <- cbind(lon = l_coords[, 2], lat = l_coords[, 1])
 
-  use_cpprouting <- requireNamespace("cppRouting", quietly = TRUE)
-
-  if (use_cpprouting) {
-    mat <- .route_matrix_cpprouting(from_ll, to_ll, graph, measure)
-  } else {
-    mat <- .route_matrix_dodgr(from_ll, to_ll, graph, measure)
+  # Use cached cppRouting structures if available
+  if (!is.null(cpp_cache)) {
+    mat <- .route_matrix_cpprouting_cached(
+      from_ll, to_ll, graph, measure, cpp_cache
+    )
+    return(mat)
   }
 
-  mat
+  # Build cppRouting on the fly (no cache)
+  if (requireNamespace("cppRouting", quietly = TRUE)) {
+    mat <- .route_matrix_cpprouting(from_ll, to_ll, graph, measure)
+    return(mat)
+  }
+
+  # Fallback to dodgr only
+  .route_matrix_dodgr(from_ll, to_ll, graph, measure)
 }
 
 
-#' Compute route matrix using cppRouting (fast path)
+#' Compute route matrix using pre-built cppRouting cache (fastest path)
 #' @noRd
-.route_matrix_cpprouting <- function(from_ll, to_ll, graph, measure) {
-  # Extract edge list from dodgr graph
-  edges <- data.frame(
-    from = graph$from_id,
-    to = graph$to_id,
-    stringsAsFactors = FALSE
-  )
+.route_matrix_cpprouting_cached <- function(from_ll, to_ll, graph, measure,
+                                            cpp_cache) {
+  verts <- cpp_cache$verts
 
   if (measure == "time") {
-    edges$weight <- graph$time_weighted
+    contracted <- cpp_cache$contracted_time
+    if (is.null(contracted)) {
+      # Time hierarchy not available, fall back
+      return(.route_matrix_dodgr(from_ll, to_ll, graph, measure))
+    }
   } else {
-    edges$weight <- graph$d_weighted
+    contracted <- cpp_cache$contracted_dist
   }
-
-  # Remove edges with NA or non-finite weights
-  valid <- is.finite(edges$weight) & edges$weight >= 0
-  edges <- edges[valid, ]
-
-  # Build cppRouting graph and contraction hierarchy
-  cpp_graph <- cppRouting::makegraph(edges, directed = TRUE)
-  contracted <- cppRouting::cpp_contract(cpp_graph)
-
-  # Snap coordinates to nearest graph vertices using dodgr
-  verts <- dodgr::dodgr_vertices(graph)
-  vert_coords <- cbind(x = verts$x, y = verts$y)
 
   from_idx <- dodgr::match_pts_to_verts(verts, from_ll)
   to_idx <- dodgr::match_pts_to_verts(verts, to_ll)
@@ -227,9 +278,48 @@ prepare_network <- function(bbox = NULL,
     algorithm = "phast"
   )
 
-  # cppRouting returns Inf for unreachable; convert to NA
   mat[!is.finite(mat)] <- NA_real_
+  mat
+}
 
+
+#' Compute route matrix using cppRouting (no cache -- builds on the fly)
+#' @noRd
+.route_matrix_cpprouting <- function(from_ll, to_ll, graph, measure) {
+  edges <- data.frame(
+    from = graph$from_id,
+    to = graph$to_id,
+    stringsAsFactors = FALSE
+  )
+
+  if (measure == "time") {
+    edges$weight <- graph$time_weighted
+  } else {
+    edges$weight <- graph$d_weighted
+  }
+
+  valid <- is.finite(edges$weight) & edges$weight >= 0
+  edges <- edges[valid, ]
+
+  cpp_graph <- cppRouting::makegraph(edges, directed = TRUE)
+  contracted <- cppRouting::cpp_contract(cpp_graph)
+
+  verts <- dodgr::dodgr_vertices(graph)
+
+  from_idx <- dodgr::match_pts_to_verts(verts, from_ll)
+  to_idx <- dodgr::match_pts_to_verts(verts, to_ll)
+
+  from_ids <- verts$id[from_idx]
+  to_ids <- verts$id[to_idx]
+
+  mat <- cppRouting::get_distance_matrix(
+    contracted,
+    from = from_ids,
+    to = to_ids,
+    algorithm = "phast"
+  )
+
+  mat[!is.finite(mat)] <- NA_real_
   mat
 }
 
