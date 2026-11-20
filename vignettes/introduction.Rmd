@@ -294,7 +294,7 @@ install.packages("cppRouting") # optional, for speed
 
 ### Driving distance
 
-```{r routing-driving, eval = requireNamespace("dodgr", quietly = TRUE)}
+```{r routing-driving, eval = FALSE}
 result_drive <- nearest_location(
   voter_meck[1:10, ], early_meck,
   voter_coords = c("lat", "long"),
@@ -314,7 +314,7 @@ lines.
 Set `measure = "time"` to get travel time instead of distance.
 The output columns are `time_seconds`, `time_minutes`, and `time_hours`:
 
-```{r routing-time, eval = requireNamespace("dodgr", quietly = TRUE)}
+```{r routing-time, eval = FALSE}
 result_walk <- nearest_location(
   voter_meck[1:10, ], early_meck,
   voter_coords = c("lat", "long"),
@@ -332,7 +332,7 @@ Road-network routing supports the same `k` and `max_dist` options as
 Haversine. When `measure = "time"`, the `max_dist` threshold is
 interpreted as **minutes**:
 
-```{r routing-k3, eval = requireNamespace("dodgr", quietly = TRUE)}
+```{r routing-k3, eval = FALSE}
 # 3 nearest driving locations
 result_k3_drive <- nearest_location(
   voter_meck[1:5, ], early_meck,
@@ -345,7 +345,7 @@ result_k3_drive <- nearest_location(
 head(result_k3_drive, 9)
 ```
 
-```{r routing-threshold, eval = requireNamespace("dodgr", quietly = TRUE)}
+```{r routing-threshold, eval = FALSE}
 # All locations within 20 minutes driving time
 result_20min <- nearest_location(
   voter_meck[1:5, ], early_meck,
@@ -366,7 +366,7 @@ make multiple `nearest_location()` calls (e.g., different subsets of
 voters, or comparing driving vs. walking), use `prepare_network()` to
 download once and reuse:
 
-```{r routing-network, eval = requireNamespace("dodgr", quietly = TRUE)}
+```{r routing-network, eval = FALSE}
 net <- prepare_network(
   voters = voter_meck, locations = early_meck,
   voter_coords = c("lat", "long"),
