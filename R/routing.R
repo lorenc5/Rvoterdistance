@@ -136,10 +136,48 @@ prepare_network <- function(bbox = NULL,
 }
 
 
-#' Download and weight an OSM street network
+#' Download and weight an OSM street network with retry and server fallback
 #' @noRd
 .build_dodgr_graph <- function(bbox, profile, quiet) {
-  net <- dodgr::dodgr_streetnet(bbox = bbox, quiet = quiet)
+  overpass_urls <- c(
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+  )
+
+  net <- NULL
+  for (url in overpass_urls) {
+    for (attempt in 1:3) {
+      net <- tryCatch(
+        {
+          osmdata::set_overpass_url(url)
+          dodgr::dodgr_streetnet(bbox = bbox, quiet = quiet)
+        },
+        error = function(e) {
+          if (!quiet) {
+            message(
+              "Overpass API error (attempt ", attempt, "/3, server: ",
+              url, "): ", conditionMessage(e)
+            )
+          }
+          NULL
+        }
+      )
+      if (!is.null(net)) break
+      if (attempt < 3) Sys.sleep(5 * attempt) # 5s, 10s backoff
+    }
+    if (!is.null(net)) break
+    if (!quiet) message("Trying alternative Overpass server...")
+  }
+
+  if (is.null(net)) {
+    stop(
+      "Failed to download street network after multiple attempts.\n",
+      "The Overpass API may be temporarily unavailable. Try again later.",
+      call. = FALSE
+    )
+  }
+
   graph <- dodgr::weight_streetnet(net, wt_profile = profile)
   attr(graph, "rvd_profile") <- profile
   graph
