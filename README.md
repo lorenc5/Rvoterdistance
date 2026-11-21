@@ -54,7 +54,8 @@ result_5mi <- nearest_location(voter_meck, early_meck,
 | Function | Description |
 |---|---|
 | `nearest_location()` | Main entry point. Supports k-nearest, distance threshold, sf objects, and road-network routing. |
-| `prepare_network()` | Download and cache a road network for repeated routing calls. |
+| `prepare_network()` | Download and cache a road network for repeated routing calls. Accepts Overpass API bbox or a local OSM file. |
+| `download_osm()` | Download a Geofabrik/BBBike OSM extract for a state or region. |
 | `dist_km()` | Minimum distance to nearest location in kilometers. |
 | `dist_mile()` | Minimum distance to nearest location in miles. |
 | `haversine()` | Single-pair great-circle distance with configurable units. |
@@ -122,6 +123,27 @@ saveRDS(net, "meck_driving_network.rds")
 
 # In a later session:
 net <- readRDS("meck_driving_network.rds")
+```
+
+### Large-area routing (state/country level)
+
+For state-sized or larger areas, the Overpass API is too slow. Use `download_osm()` to get a pre-built extract from [Geofabrik](https://download.geofabrik.de/), then build the network from the local file. Requires the `osmextract` package:
+
+```r
+install.packages("osmextract")
+
+# Download Georgia extract (~200 MB, cached for reuse)
+osm_file <- download_osm("Georgia")
+
+# Build network from local file (skips Overpass entirely)
+net <- prepare_network(file = osm_file, mode = "driving")
+saveRDS(net, "georgia_driving.rds")
+
+# Route as usual
+result <- nearest_location(georgia_voters, dropboxes,
+  voter_coords = c("lat", "lon"),
+  location_coords = c("lat", "lon"),
+  method = "driving", network = net)
 ```
 
 ## Included Data

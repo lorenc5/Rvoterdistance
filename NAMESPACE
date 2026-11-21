@@ -3,6 +3,7 @@
 export(dist_km)
 export(dist_mile)
 export(dist_to_boundary)
+export(download_osm)
 export(haversine)
 export(nearest_location)
 export(prepare_network)

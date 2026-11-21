@@ -243,3 +243,43 @@ test_that("mismatched network mode warns", {
     "Network was built for"
   )
 })
+
+
+# --- osmextract / download_osm tests (gated) ---
+
+test_that(".check_osmextract() errors when package is missing", {
+  # We can test the check function directly -- if osmextract IS installed,
+  # it should not error; if not installed, it should error.
+  if (requireNamespace("osmextract", quietly = TRUE)) {
+    expect_silent(.check_osmextract())
+  } else {
+    expect_error(.check_osmextract(), "osmextract")
+  }
+})
+
+test_that(".load_osm_file() errors on non-existent file", {
+  skip_if_not_installed("osmextract")
+  expect_error(.load_osm_file("/nonexistent/path.osm.pbf"), "File not found")
+})
+
+test_that("download_osm() validates provider argument", {
+  skip_if_not_installed("osmextract")
+  expect_error(download_osm("Georgia", provider = "invalid"))
+})
+
+test_that("prepare_network() errors with no inputs", {
+  skip_if_not_installed("dodgr")
+  expect_error(
+    prepare_network(mode = "driving"),
+    "Provide one of"
+  )
+})
+
+test_that("prepare_network() errors with non-existent file", {
+  skip_if_not_installed("dodgr")
+  skip_if_not_installed("osmextract")
+  expect_error(
+    prepare_network(file = "/nonexistent/file.osm.pbf", mode = "driving"),
+    "File not found"
+  )
+})

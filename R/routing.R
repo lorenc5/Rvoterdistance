@@ -1,3 +1,67 @@
+#' Download an OpenStreetMap extract for a region
+#'
+#' Downloads a pre-built OSM extract (PBF file) from Geofabrik or BBBike for
+#' use with [prepare_network()]. This is the recommended approach for
+#' state-sized or larger areas where the Overpass API would be too slow or
+#' hit rate limits.
+#'
+#' Requires the \pkg{osmextract} package.
+#'
+#' @param place Character string matching a region name recognised by the
+#'   provider (e.g., `"Georgia"`, `"North Carolina"`, `"Germany"`).
+#' @param provider Character. Which OSM extract provider to use. One of
+#'   `"geofabrik"` (default) or `"bbbike"`.
+#' @param download_dir Character. Directory to save the downloaded file. If
+#'   `NULL` (default), uses the \pkg{osmextract} cache directory.
+#' @param quiet Logical. If `TRUE`, suppress download messages.
+#'   Default `FALSE`.
+#'
+#' @return Character string: the file path to the downloaded `.osm.pbf` file.
+#'   Pass this path to `prepare_network(file = ...)`.
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' # Download Georgia extract from Geofabrik
+#' osm_file <- download_osm("Georgia")
+#'
+#' # Build a driving network from the downloaded file
+#' net <- prepare_network(file = osm_file, mode = "driving")
+#'
+#' # Use with nearest_location()
+#' result <- nearest_location(georgia_voters, dropboxes,
+#'   voter_coords = c("lat", "lon"),
+#'   location_coords = c("lat", "lon"),
+#'   method = "driving", network = net
+#' )
+#' }
+download_osm <- function(place,
+                         provider = c("geofabrik", "bbbike"),
+                         download_dir = NULL,
+                         quiet = FALSE) {
+  .check_osmextract()
+  provider <- match.arg(provider)
+
+  if (!quiet) message("Matching '", place, "' to ", provider, " catalogue...")
+  match_result <- osmextract::oe_match(place, provider = provider, quiet = quiet)
+
+  download_args <- list(
+    file_url = match_result$url,
+    quiet = quiet,
+    force_download = FALSE
+  )
+  if (!is.null(download_dir)) {
+    download_args$download_directory <- download_dir
+  }
+
+  if (!quiet) message("Downloading OSM extract...")
+  file_path <- do.call(osmextract::oe_download, download_args)
+
+  if (!quiet) message("Download complete: ", file_path)
+  file_path
+}
+
+
 #' Prepare a road network for routing
 #'
 #' Downloads and weights an OpenStreetMap street network for use with
@@ -25,6 +89,10 @@
 #' @param pad Numeric. Fraction of the bounding box extent to add as padding.
 #'   Default `0.05` (5%).
 #' @param quiet Logical. If `TRUE`, suppress download messages. Default `FALSE`.
+#' @param file Character. Path to a local `.osm.pbf` or `.gpkg` file (e.g.,
+#'   from [download_osm()]). When provided, the street network is loaded from
+#'   this file instead of downloading via the Overpass API. This is recommended
+#'   for state-sized or larger areas. Requires the \pkg{osmextract} package.
 #'
 #' @return A list of class `"rvd_network"` containing the weighted graph and
 #'   metadata. Pass this to `nearest_location(network = ...)`.
@@ -44,6 +112,10 @@
 #'   location_coords = c("lat", "long"),
 #'   method = "driving", network = net
 #' )
+#'
+#' # Large-area workflow using a Geofabrik extract:
+#' osm_file <- download_osm("Georgia")
+#' net_ga <- prepare_network(file = osm_file, mode = "driving")
 #' }
 prepare_network <- function(bbox = NULL,
                             voters = NULL,
@@ -52,24 +124,33 @@ prepare_network <- function(bbox = NULL,
                             location_coords = NULL,
                             mode = c("driving", "walking", "cycling"),
                             pad = 0.05,
-                            quiet = FALSE) {
+                            quiet = FALSE,
+                            file = NULL) {
   .check_dodgr()
   mode <- match.arg(mode)
   profile <- .method_to_profile(mode)
 
-  if (is.null(bbox)) {
-    if (is.null(voters) || is.null(locations)) {
-      stop("Either 'bbox' or both 'voters' and 'locations' must be provided.",
-        call. = FALSE
-      )
+  if (!is.null(file)) {
+    # --- Local file path: load via osmextract ---
+    net <- .load_osm_file(file, quiet = quiet)
+    if (!quiet) message("Weighting street network...")
+    graph <- dodgr::weight_streetnet(net, wt_profile = profile)
+    attr(graph, "rvd_profile") <- profile
+  } else if (!is.null(bbox) || (!is.null(voters) && !is.null(locations))) {
+    # --- Overpass API path (existing behaviour) ---
+    if (is.null(bbox)) {
+      v_coords <- .extract_coords(voters, voter_coords, "voters")
+      l_coords <- .extract_coords(locations, location_coords, "locations")
+      bbox <- .compute_bbox(v_coords, l_coords, pad)
     }
-    v_coords <- .extract_coords(voters, voter_coords, "voters")
-    l_coords <- .extract_coords(locations, location_coords, "locations")
-    bbox <- .compute_bbox(v_coords, l_coords, pad)
+    if (!quiet) message("Downloading street network from OpenStreetMap...")
+    graph <- .build_dodgr_graph(bbox, profile, quiet)
+  } else {
+    stop(
+      "Provide one of: 'file', 'bbox', or both 'voters' and 'locations'.",
+      call. = FALSE
+    )
   }
-
-  if (!quiet) message("Downloading street network from OpenStreetMap...")
-  graph <- .build_dodgr_graph(bbox, profile, quiet)
 
   # Pre-build cppRouting structures if available
   cpp_cache <- .build_cpprouting_cache(graph, quiet)
@@ -228,6 +309,40 @@ prepare_network <- function(bbox = NULL,
     contracted_dist = contracted_dist,
     contracted_time = contracted_time,
     verts = verts
+  )
+}
+
+
+#' Check that osmextract is installed
+#' @noRd
+.check_osmextract <- function() {
+  if (!requireNamespace("osmextract", quietly = TRUE)) {
+    stop(
+      "Package 'osmextract' is required for Geofabrik/BBBike downloads.\n",
+      "Install it with: install.packages('osmextract')",
+      call. = FALSE
+    )
+  }
+}
+
+
+#' Load an OSM file (PBF or GPKG) via osmextract
+#' @param file Path to a `.osm.pbf` or `.gpkg` file.
+#' @param quiet Logical. Suppress messages.
+#' @return An sf object with highway lines suitable for `weight_streetnet()`.
+#' @noRd
+.load_osm_file <- function(file, quiet = FALSE) {
+  .check_osmextract()
+  if (!file.exists(file)) {
+    stop("File not found: ", file, call. = FALSE)
+  }
+  if (!quiet) message("Reading OSM data from local file...")
+  osmextract::oe_read(
+    file,
+    layer = "lines",
+    extra_tags = c("maxspeed", "oneway", "access", "foot", "bicycle",
+                   "motorcar", "motor_vehicle"),
+    quiet = quiet
   )
 }
 

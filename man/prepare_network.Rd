@@ -12,7 +12,8 @@ prepare_network(
   location_coords = NULL,
   mode = c("driving", "walking", "cycling"),
   pad = 0.05,
-  quiet = FALSE
+  quiet = FALSE,
+  file = NULL
 )
 }
 \arguments{
@@ -40,6 +41,11 @@ Default \code{"driving"}.}
 Default \code{0.05} (5\%).}
 
 \item{quiet}{Logical. If \code{TRUE}, suppress download messages. Default \code{FALSE}.}
+
+\item{file}{Character. Path to a local \code{.osm.pbf} or \code{.gpkg} file (e.g.,
+from \code{\link[=download_osm]{download_osm()}}). When provided, the street network is loaded from
+this file instead of downloading via the Overpass API. This is recommended
+for state-sized or larger areas. Requires the \pkg{osmextract} package.}
 }
 \value{
 A list of class \code{"rvd_network"} containing the weighted graph and
@@ -69,5 +75,9 @@ result <- nearest_location(voter_meck[1:10, ], early_meck,
   location_coords = c("lat", "long"),
   method = "driving", network = net
 )
+
+# Large-area workflow using a Geofabrik extract:
+osm_file <- download_osm("Georgia")
+net_ga <- prepare_network(file = osm_file, mode = "driving")
 }
 }

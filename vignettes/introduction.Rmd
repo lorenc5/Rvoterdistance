@@ -423,6 +423,59 @@ saveRDS(net, "meck_driving_network.rds")
 net <- readRDS("meck_driving_network.rds")
 ```
 
+### Large-area routing with Geofabrik extracts
+
+The Overpass API works well for county-sized areas, but for an entire state
+or country it can be too slow or hit rate limits. The `download_osm()`
+function downloads pre-built OSM extracts from [Geofabrik](https://download.geofabrik.de/)
+which are available for every US state and most countries. This requires the
+`osmextract` package:
+
+```{r geofabrik-install, eval = FALSE}
+install.packages("osmextract")
+```
+
+The workflow is:
+
+1. **Download** the extract once with `download_osm()`
+2. **Build** the network from the local file with `prepare_network(file = ...)`
+3. **Route** as usual with `nearest_location()`
+
+```{r geofabrik-workflow, eval = FALSE}
+# Step 1: Download the Georgia extract (~200 MB PBF file, cached locally)
+osm_file <- download_osm("Georgia")
+
+# Step 2: Build the driving network from the local file
+net <- prepare_network(file = osm_file, mode = "driving")
+
+# Step 3: Save the network so you never need to rebuild
+saveRDS(net, "georgia_driving.rds")
+
+# Step 4: Route voters to nearest drop box
+result <- nearest_location(
+  georgia_voters, dropboxes,
+  voter_coords = c("lat", "lon"),
+  location_coords = c("lat", "lon"),
+  method = "driving", network = net
+)
+```
+
+The `download_osm()` function caches the downloaded file, so subsequent
+calls for the same region skip the download. You can also specify a
+custom download directory:
+
+```{r geofabrik-custom, eval = FALSE}
+osm_file <- download_osm("North Carolina", download_dir = "~/osm_data")
+```
+
+For areas outside the US, Geofabrik provides extracts for most countries
+and sub-regions:
+
+```{r geofabrik-international, eval = FALSE}
+osm_file_de <- download_osm("Germany")
+osm_file_mx <- download_osm("Mexico")
+```
+
 ## Performance
 
 The Haversine computation runs in C++ and uses partial sorting
