@@ -147,6 +147,51 @@ result <- nearest_location(georgia_voters, dropboxes,
   method = "driving", network = net)
 ```
 
+### Haversine pre-filter for large datasets
+
+When routing millions of voters against hundreds of locations, the full distance matrix (e.g., 7M voters × 307 drop boxes = 2.1 billion route calculations) can be prohibitively slow. The `prefilter` parameter uses the fast C++ haversine to screen each voter's top N closest locations by straight-line distance, then only computes expensive road-network distances for those candidates:
+
+```r
+data(ga_ev)
+net <- readRDS("georgia_driving.rds")
+
+# Without prefilter: computes all 400 × 307 = 122,800 routes
+result_full <- nearest_location(ga_voter, ga_dbox,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", network = net)
+
+# With prefilter: screens to top 10 by haversine, then routes 400 × 10 = 4,000 pairs
+result_fast <- nearest_location(ga_voter, ga_dbox,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", network = net,
+  prefilter = 10)
+
+# Results are identical (or very nearly so) but prefilter is much faster.
+# At scale (7M voters), expect ~30x speedup.
+```
+
+`prefilter` works with all road-network options: `k > 1`, `max_dist` thresholds, and `measure = "time"`:
+
+```r
+# 3 nearest drop boxes, screening top 15 candidates first
+result_k3 <- nearest_location(ga_voter, ga_dbox,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", network = net,
+  k = 3, prefilter = 15)
+
+# All drop boxes within 20-minute drive, screening top 15 candidates
+result_time <- nearest_location(ga_voter, ga_dbox,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", network = net,
+  measure = "time", max_dist = 20, prefilter = 15)
+```
+
+**Choosing a prefilter value:** `prefilter` must be >= `k`. A value of 10 is safe for `k = 1`; for larger `k` or threshold mode, use at least `2*k + 5` to ensure the true road-nearest locations aren't missed by the haversine screen.
+
 ## Included Data
 
 - **king_dbox / king_geo**: King County, WA ballot drop box locations and voter sample
