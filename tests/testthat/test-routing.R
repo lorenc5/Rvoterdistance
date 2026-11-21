@@ -80,10 +80,23 @@ test_that("invalid network object errors", {
 
 
 # --- Network-dependent tests (gated) ---
+# These tests download street networks from the OpenStreetMap Overpass API,
+# which frequently rate-limits requests and causes tests to hang with
+# "Waiting 60s for retry backoff" messages. They are skipped on CI and CRAN.
+# To run locally, set RVD_RUN_NETWORK_TESTS=true in your environment:
+#   Sys.setenv(RVD_RUN_NETWORK_TESTS = "true")
+
+.skip_network <- function() {
+  skip_on_cran()
+  skip_on_ci()
+  skip_if_not_installed("dodgr")
+  if (!identical(Sys.getenv("RVD_RUN_NETWORK_TESTS"), "true")) {
+    skip("Network tests skipped. Set RVD_RUN_NETWORK_TESTS=true to run.")
+  }
+}
 
 test_that("driving k=1 returns one row per voter with distance columns", {
-  skip_on_cran()
-  skip_if_not_installed("dodgr")
+  .skip_network()
 
   data(meck_ev, package = "Rvoterdistance")
   voters_sub <- voter_meck[1:5, ]
@@ -101,8 +114,7 @@ test_that("driving k=1 returns one row per voter with distance columns", {
 })
 
 test_that("road distance >= haversine distance", {
-  skip_on_cran()
-  skip_if_not_installed("dodgr")
+  .skip_network()
 
   data(meck_ev, package = "Rvoterdistance")
   voters_sub <- voter_meck[1:5, ]
@@ -126,8 +138,7 @@ test_that("road distance >= haversine distance", {
 })
 
 test_that("walking + measure = 'time' returns time columns", {
-  skip_on_cran()
-  skip_if_not_installed("dodgr")
+  .skip_network()
 
   data(meck_ev, package = "Rvoterdistance")
   voters_sub <- voter_meck[1:3, ]
@@ -146,8 +157,7 @@ test_that("walking + measure = 'time' returns time columns", {
 })
 
 test_that("k=3 driving returns ranked results with non-decreasing values", {
-  skip_on_cran()
-  skip_if_not_installed("dodgr")
+  .skip_network()
 
   data(meck_ev, package = "Rvoterdistance")
   voters_sub <- voter_meck[1:3, ]
@@ -174,8 +184,7 @@ test_that("k=3 driving returns ranked results with non-decreasing values", {
 })
 
 test_that("threshold mode filters correctly with routing", {
-  skip_on_cran()
-  skip_if_not_installed("dodgr")
+  .skip_network()
 
   data(meck_ev, package = "Rvoterdistance")
   voters_sub <- voter_meck[1:3, ]
@@ -195,8 +204,7 @@ test_that("threshold mode filters correctly with routing", {
 })
 
 test_that("prepare_network() returns usable network object", {
-  skip_on_cran()
-  skip_if_not_installed("dodgr")
+  .skip_network()
 
   data(meck_ev, package = "Rvoterdistance")
 
@@ -222,8 +230,7 @@ test_that("prepare_network() returns usable network object", {
 })
 
 test_that("mismatched network mode warns", {
-  skip_on_cran()
-  skip_if_not_installed("dodgr")
+  .skip_network()
 
   data(meck_ev, package = "Rvoterdistance")
 

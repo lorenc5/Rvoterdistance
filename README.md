@@ -150,6 +150,7 @@ result <- nearest_location(georgia_voters, dropboxes,
 
 - **king_dbox / king_geo**: King County, WA ballot drop box locations and voter sample
 - **meck_ev (voter_meck / early_meck)**: Mecklenburg County, NC early voting locations and voter sample
+- **ga_ev (ga_voter / ga_dbox)**: Georgia 2020 drop box locations (307 statewide) and voter sample (400 voters from Chatham, Clarke, Fulton, Muscogee counties)
 
 ## Citation
 
