@@ -77,7 +77,7 @@ result <- nearest_location(voter_meck[1:10, ], early_meck,
 )
 
 # Large-area workflow using a Geofabrik extract:
-osm_file <- download_osm("Georgia")
+osm_file <- download_osm("Georgia, United States")
 net_ga <- prepare_network(file = osm_file, mode = "driving")
 }
 }

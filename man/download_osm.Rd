@@ -13,7 +13,9 @@ download_osm(
 }
 \arguments{
 \item{place}{Character string matching a region name recognised by the
-provider (e.g., \code{"Georgia"}, \code{"North Carolina"}, \code{"Germany"}).}
+provider (e.g., \code{"North Carolina"}, \code{"Germany"}). \strong{Note:} ambiguous
+names like \code{"Georgia"} may match a country instead of a US state.
+Use \code{"Georgia, United States"} to ensure the correct match.}
 
 \item{provider}{Character. Which OSM extract provider to use. One of
 \code{"geofabrik"} (default) or \code{"bbbike"}.}
@@ -39,8 +41,8 @@ Requires the \pkg{osmextract} package.
 }
 \examples{
 \dontrun{
-# Download Georgia extract from Geofabrik
-osm_file <- download_osm("Georgia")
+# Download Georgia (US) extract from Geofabrik
+osm_file <- download_osm("Georgia, United States")
 
 # Build a driving network from the downloaded file
 net <- prepare_network(file = osm_file, mode = "driving")

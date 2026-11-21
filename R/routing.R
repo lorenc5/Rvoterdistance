@@ -8,7 +8,9 @@
 #' Requires the \pkg{osmextract} package.
 #'
 #' @param place Character string matching a region name recognised by the
-#'   provider (e.g., `"Georgia"`, `"North Carolina"`, `"Germany"`).
+#'   provider (e.g., `"North Carolina"`, `"Germany"`). **Note:** ambiguous
+#'   names like `"Georgia"` may match a country instead of a US state.
+#'   Use `"Georgia, United States"` to ensure the correct match.
 #' @param provider Character. Which OSM extract provider to use. One of
 #'   `"geofabrik"` (default) or `"bbbike"`.
 #' @param download_dir Character. Directory to save the downloaded file. If
@@ -22,8 +24,8 @@
 #' @export
 #' @examples
 #' \dontrun{
-#' # Download Georgia extract from Geofabrik
-#' osm_file <- download_osm("Georgia")
+#' # Download Georgia (US) extract from Geofabrik
+#' osm_file <- download_osm("Georgia, United States")
 #'
 #' # Build a driving network from the downloaded file
 #' net <- prepare_network(file = osm_file, mode = "driving")
@@ -114,7 +116,7 @@ download_osm <- function(place,
 #' )
 #'
 #' # Large-area workflow using a Geofabrik extract:
-#' osm_file <- download_osm("Georgia")
+#' osm_file <- download_osm("Georgia, United States")
 #' net_ga <- prepare_network(file = osm_file, mode = "driving")
 #' }
 prepare_network <- function(bbox = NULL,
@@ -538,6 +540,230 @@ prepare_network <- function(bbox = NULL,
       result[[i]] <- list(
         distances = row_vals[within[ord]],
         indices = within[ord]
+      )
+    }
+  }
+
+  result
+}
+
+
+# --- Pre-filter helpers -----------------------------------------------------
+
+#' Compute road-network distances for pre-filtered voter-location pairs
+#'
+#' Instead of computing a full n_voters x n_locations matrix, this function
+#' computes distances only for the candidate pairs identified by haversine
+#' pre-screening. Uses \code{cppRouting::get_distance_pair()} for pairwise
+#' routing when available, falling back to \code{dodgr::dodgr_dists()} with
+#' a reduced location set.
+#'
+#' @param v_coords Two-column matrix (lat, lon) of voter coordinates.
+#' @param l_coords Two-column matrix (lat, lon) of location coordinates.
+#' @param haversine_indices Integer matrix (n_voters x prefilter_n) of 1-based
+#'   location indices from \code{cpp_k_nearest()}.
+#' @param graph A weighted dodgr graph.
+#' @param measure \code{"distance"} or \code{"time"}.
+#' @param cpp_cache Optional pre-built cppRouting cache from
+#'   \code{prepare_network()}.
+#' @return A list with:
+#'   \describe{
+#'     \item{distances}{n_voters x prefilter_n numeric matrix (meters or
+#'       seconds)}
+#'     \item{indices}{n_voters x prefilter_n integer matrix (1-based location
+#'       indices, same as \code{haversine_indices})}
+#'   }
+#' @noRd
+.route_distances_prefiltered <- function(v_coords, l_coords,
+                                         haversine_indices,
+                                         graph, measure,
+                                         cpp_cache = NULL) {
+  # dodgr expects lon/lat column order
+  from_ll <- cbind(lon = v_coords[, 2], lat = v_coords[, 1])
+  to_ll <- cbind(lon = l_coords[, 2], lat = l_coords[, 1])
+
+  n_voters <- nrow(v_coords)
+  prefilter_n <- ncol(haversine_indices)
+
+  # --- cppRouting with pre-built cache (fastest path) ---
+  if (!is.null(cpp_cache)) {
+    verts <- cpp_cache$verts
+
+    if (measure == "time") {
+      contracted <- cpp_cache$contracted_time
+      if (is.null(contracted)) {
+        return(.route_prefiltered_dodgr(
+          from_ll, to_ll, haversine_indices, graph, measure
+        ))
+      }
+    } else {
+      contracted <- cpp_cache$contracted_dist
+    }
+
+    return(.route_prefiltered_cpprouting(
+      from_ll, to_ll, haversine_indices, contracted, verts
+    ))
+  }
+
+  # --- cppRouting without cache (build on the fly) ---
+  if (requireNamespace("cppRouting", quietly = TRUE)) {
+    edges <- data.frame(
+      from = graph$from_id,
+      to = graph$to_id,
+      stringsAsFactors = FALSE
+    )
+    if (measure == "time") {
+      edges$weight <- graph$time_weighted
+    } else {
+      edges$weight <- graph$d_weighted
+    }
+    valid <- is.finite(edges$weight) & edges$weight >= 0
+    edges <- edges[valid, ]
+
+    cpp_graph <- cppRouting::makegraph(edges, directed = TRUE)
+    contracted <- cppRouting::cpp_contract(cpp_graph)
+    verts <- dodgr::dodgr_vertices(graph)
+
+    return(.route_prefiltered_cpprouting(
+      from_ll, to_ll, haversine_indices, contracted, verts
+    ))
+  }
+
+  # --- dodgr fallback ---
+  .route_prefiltered_dodgr(from_ll, to_ll, haversine_indices, graph, measure)
+}
+
+
+#' Pairwise routing via cppRouting for pre-filtered pairs
+#' @noRd
+.route_prefiltered_cpprouting <- function(from_ll, to_ll, haversine_indices,
+                                          contracted, verts) {
+  n_voters <- nrow(from_ll)
+  prefilter_n <- ncol(haversine_indices)
+
+  # Snap all points to graph vertices
+  from_snap <- dodgr::match_pts_to_verts(verts, from_ll)
+  to_snap <- dodgr::match_pts_to_verts(verts, to_ll)
+
+  # Build parallel from/to ID vectors (vectorised)
+  voter_rep <- rep(seq_len(n_voters), each = prefilter_n)
+  loc_flat <- as.integer(t(haversine_indices)) # row-major flatten
+
+  pair_from_ids <- verts$id[from_snap[voter_rep]]
+  pair_to_ids <- verts$id[to_snap[loc_flat]]
+
+  # Pairwise distances
+  dists <- cppRouting::get_distance_pair(contracted, pair_from_ids, pair_to_ids)
+  dists[!is.finite(dists)] <- NA_real_
+
+  # Reshape to matrix (row-major order matches the flattening above)
+  dist_mat <- matrix(dists, nrow = n_voters, ncol = prefilter_n, byrow = TRUE)
+
+  list(distances = dist_mat, indices = haversine_indices)
+}
+
+
+#' dodgr fallback for pre-filtered routing
+#'
+#' Computes a reduced distance matrix (all voters x unique candidate locations)
+#' and extracts the specific pairs.
+#' @noRd
+.route_prefiltered_dodgr <- function(from_ll, to_ll, haversine_indices,
+                                     graph, measure) {
+  n_voters <- nrow(from_ll)
+  prefilter_n <- ncol(haversine_indices)
+
+  # Identify unique location indices to minimise the "to" set
+
+  unique_loc_idx <- sort(unique(as.integer(haversine_indices)))
+  to_ll_subset <- to_ll[unique_loc_idx, , drop = FALSE]
+
+  # Map from original location index to column in the reduced matrix
+  col_map <- integer(nrow(to_ll))
+  col_map[unique_loc_idx] <- seq_along(unique_loc_idx)
+
+  # Compute reduced matrix: n_voters x length(unique_loc_idx)
+  if (measure == "time") {
+    mat <- dodgr::dodgr_times(graph, from = from_ll, to = to_ll_subset)
+  } else {
+    mat <- dodgr::dodgr_dists(graph, from = from_ll, to = to_ll_subset)
+  }
+
+  # Extract the specific pairs using vectorised matrix indexing
+  loc_flat <- as.integer(t(haversine_indices))
+  col_indices <- col_map[loc_flat]
+  row_indices <- rep(seq_len(n_voters), each = prefilter_n)
+  dists_flat <- mat[cbind(row_indices, col_indices)]
+
+  dist_mat <- matrix(dists_flat, nrow = n_voters, ncol = prefilter_n,
+                     byrow = TRUE)
+
+  list(distances = dist_mat, indices = haversine_indices)
+}
+
+
+#' Extract k-nearest from pre-filtered results
+#'
+#' Re-ranks the pre-filtered candidates by road distance and returns the
+#' top k, in the same format as \code{.matrix_to_knearest()}.
+#'
+#' @param prefiltered List with \code{distances} and \code{indices} matrices
+#'   (n_voters x prefilter_n).
+#' @param k Integer number of nearest to extract.
+#' @return List with \code{distances} (n_voters x k) and \code{indices}
+#'   (n_voters x k, 1-based location indices).
+#' @noRd
+.prefiltered_to_knearest <- function(prefiltered, k) {
+  dist_mat <- prefiltered$distances
+  idx_mat <- prefiltered$indices
+
+  n_voters <- nrow(dist_mat)
+  prefilter_n <- ncol(dist_mat)
+  k <- min(k, prefilter_n)
+
+  out_dist <- matrix(NA_real_, nrow = n_voters, ncol = k)
+  out_idx <- matrix(NA_integer_, nrow = n_voters, ncol = k)
+
+  for (i in seq_len(n_voters)) {
+    ord <- order(dist_mat[i, ], na.last = TRUE)
+    top_k <- ord[seq_len(k)]
+    out_dist[i, ] <- dist_mat[i, top_k]
+    out_idx[i, ] <- idx_mat[i, top_k]
+  }
+
+  list(distances = out_dist, indices = out_idx)
+}
+
+
+#' Extract within-threshold from pre-filtered results
+#'
+#' Filters pre-filtered candidates to those within the distance/time
+#' threshold, returning the same structure as \code{.matrix_to_threshold()}.
+#'
+#' @param prefiltered List with \code{distances} and \code{indices} matrices
+#'   (n_voters x prefilter_n).
+#' @param max_val Numeric threshold (meters or seconds).
+#' @return List of lists (one per voter), each with \code{distances} and
+#'   \code{indices} (1-based).
+#' @noRd
+.prefiltered_to_threshold <- function(prefiltered, max_val) {
+  dist_mat <- prefiltered$distances
+  idx_mat <- prefiltered$indices
+  n_voters <- nrow(dist_mat)
+
+  result <- vector("list", n_voters)
+
+  for (i in seq_len(n_voters)) {
+    dists <- dist_mat[i, ]
+    idxs <- idx_mat[i, ]
+    within <- which(!is.na(dists) & dists <= max_val)
+    if (length(within) == 0L) {
+      result[[i]] <- list(distances = numeric(0), indices = integer(0))
+    } else {
+      ord <- order(dists[within])
+      result[[i]] <- list(
+        distances = dists[within[ord]],
+        indices = as.integer(idxs[within[ord]])
       )
     }
   }

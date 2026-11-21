@@ -132,8 +132,9 @@ For state-sized or larger areas, the Overpass API is too slow. Use `download_osm
 ```r
 install.packages("osmextract")
 
-# Download Georgia extract (~200 MB, cached for reuse)
-osm_file <- download_osm("Georgia")
+# Download Georgia (US) extract (~320 MB, cached for reuse)
+# Note: use "Georgia, United States" to avoid matching the country Georgia
+osm_file <- download_osm("Georgia, United States")
 
 # Build network from local file (skips Overpass entirely)
 net <- prepare_network(file = osm_file, mode = "driving")

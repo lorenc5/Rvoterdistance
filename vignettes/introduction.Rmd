@@ -442,8 +442,9 @@ The workflow is:
 3. **Route** as usual with `nearest_location()`
 
 ```{r geofabrik-workflow, eval = FALSE}
-# Step 1: Download the Georgia extract (~200 MB PBF file, cached locally)
-osm_file <- download_osm("Georgia")
+# Step 1: Download the Georgia (US) extract (~320 MB PBF file, cached locally)
+# Note: use "Georgia, United States" to distinguish from the country Georgia
+osm_file <- download_osm("Georgia, United States")
 
 # Step 2: Build the driving network from the local file
 net <- prepare_network(file = osm_file, mode = "driving")

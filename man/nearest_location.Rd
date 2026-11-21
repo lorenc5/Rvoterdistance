@@ -16,7 +16,8 @@ nearest_location(
   progress = FALSE,
   method = c("haversine", "driving", "walking", "cycling"),
   measure = c("distance", "time"),
-  network = NULL
+  network = NULL,
+  prefilter = NULL
 )
 }
 \arguments{
@@ -66,6 +67,15 @@ road-network method.}
 \item{network}{An optional pre-built network object from
 \code{\link[=prepare_network]{prepare_network()}}. Avoids re-downloading the street network on
 repeated calls.}
+
+\item{prefilter}{Integer or \code{NULL}. When set, uses the fast C++ haversine
+to identify the top \code{prefilter} closest locations per voter, then
+computes expensive road-network distances only for those candidates.
+This dramatically reduces computation for large voter/location sets
+(e.g., from 7M x 307 = 2.1B routes down to 7M x 10 = 70M routes).
+Only used when \code{method} is \code{"driving"}, \code{"walking"}, or \code{"cycling"};
+ignored for \code{method = "haversine"}. Must be >= \code{k}. Default \code{NULL}
+(no pre-filter; full distance matrix is computed).}
 }
 \value{
 A data frame. When \code{measure = "distance"}: distance columns
@@ -133,6 +143,15 @@ result <- nearest_location(voter_meck[1:10, ], early_meck,
   voter_coords = c("lat", "long"),
   location_coords = c("lat", "long"),
   method = "driving", network = net
+)
+
+# Haversine pre-filter for large datasets (screens to top 10 candidates
+# per voter by straight-line distance before computing road distances)
+result_fast <- nearest_location(voter_meck[1:10, ], early_meck,
+  voter_coords = c("lat", "long"),
+  location_coords = c("lat", "long"),
+  method = "driving", network = net,
+  prefilter = 10
 )
 }
 }

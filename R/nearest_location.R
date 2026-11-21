@@ -40,6 +40,14 @@
 #' @param network An optional pre-built network object from
 #'   [prepare_network()]. Avoids re-downloading the street network on
 #'   repeated calls.
+#' @param prefilter Integer or `NULL`. When set, uses the fast C++ haversine
+#'   to identify the top `prefilter` closest locations per voter, then
+#'   computes expensive road-network distances only for those candidates.
+#'   This dramatically reduces computation for large voter/location sets
+#'   (e.g., from 7M x 307 = 2.1B routes down to 7M x 10 = 70M routes).
+#'   Only used when `method` is `"driving"`, `"walking"`, or `"cycling"`;
+#'   ignored for `method = "haversine"`. Must be >= `k`. Default `NULL`
+#'   (no pre-filter; full distance matrix is computed).
 #'
 #' @return A data frame. When `measure = "distance"`: distance columns
 #'   (`distance_m`, `distance_km`, `distance_miles`). When
@@ -102,6 +110,15 @@
 #'   location_coords = c("lat", "long"),
 #'   method = "driving", network = net
 #' )
+#'
+#' # Haversine pre-filter for large datasets (screens to top 10 candidates
+#' # per voter by straight-line distance before computing road distances)
+#' result_fast <- nearest_location(voter_meck[1:10, ], early_meck,
+#'   voter_coords = c("lat", "long"),
+#'   location_coords = c("lat", "long"),
+#'   method = "driving", network = net,
+#'   prefilter = 10
+#' )
 #' }
 nearest_location <- function(voters,
                              locations,
@@ -115,7 +132,8 @@ nearest_location <- function(voters,
                              method = c("haversine", "driving", "walking",
                                         "cycling"),
                              measure = c("distance", "time"),
-                             network = NULL) {
+                             network = NULL,
+                             prefilter = NULL) {
   units <- match.arg(units)
   method <- match.arg(method)
   measure <- match.arg(measure)
@@ -144,6 +162,32 @@ nearest_location <- function(voters,
   k <- as.integer(k)
   if (k < 1L) stop("'k' must be >= 1", call. = FALSE)
 
+  # --- Validate prefilter ---
+  if (!is.null(prefilter)) {
+    prefilter <- as.integer(prefilter)
+    if (method == "haversine") {
+      warning("'prefilter' is ignored for method = 'haversine'.",
+        call. = FALSE
+      )
+      prefilter <- NULL
+    } else {
+      if (prefilter < 1L) {
+        stop("'prefilter' must be >= 1.", call. = FALSE)
+      }
+      if (is.null(max_dist) && prefilter < k) {
+        stop("'prefilter' must be >= 'k' (", k, ").", call. = FALSE)
+      }
+      n_locs <- nrow(l_coords)
+      if (prefilter >= n_locs) {
+        message(
+          "prefilter (", prefilter, ") >= number of locations (", n_locs,
+          "). Using full matrix instead."
+        )
+        prefilter <- NULL
+      }
+    }
+  }
+
   # --- Road-network routing ---
   if (method != "haversine") {
     .check_dodgr()
@@ -162,6 +206,55 @@ nearest_location <- function(voters,
       )
       bbox <- .compute_bbox(v_coords, l_coords, pad = 0.05)
       graph <- .build_dodgr_graph(bbox, profile, quiet = !progress)
+    }
+
+    # --- Pre-filter branch: haversine screening + sparse routing ---
+    if (!is.null(prefilter)) {
+      if (progress) message("Haversine pre-filter: selecting top ", prefilter,
+                            " candidates per voter...")
+      haversine_raw <- cpp_k_nearest(
+        voter_lat, voter_lon, loc_lat, loc_lon,
+        prefilter, progress
+      )
+
+      if (progress) message("Computing road-network distances for ",
+                            nrow(v_coords), " x ", prefilter, " pairs...")
+      prefiltered <- .route_distances_prefiltered(
+        v_coords, l_coords, haversine_raw$indices,
+        graph, measure, cpp_cache = cpp_cache
+      )
+
+      # Extract k-nearest or threshold from pre-filtered results
+      if (!is.null(max_dist)) {
+        if (measure == "time") {
+          max_val <- max_dist * 60.0
+        } else {
+          max_val <- .to_meters(max_dist, units)
+        }
+        raw <- .prefiltered_to_threshold(prefiltered, max_val)
+        if (measure == "time") {
+          result <- .format_threshold_result_time(
+            raw, voters, locations, append_data
+          )
+        } else {
+          result <- .format_threshold_result(
+            raw, voters, locations, units, append_data
+          )
+        }
+      } else {
+        raw <- .prefiltered_to_knearest(prefiltered, k)
+        if (measure == "time") {
+          result <- .format_knearest_result_time(
+            raw, k, voters, locations, append_data
+          )
+        } else {
+          result <- .format_knearest_result(
+            raw, k, voters, locations, units, append_data
+          )
+        }
+      }
+
+      return(result)
     }
 
     # Compute full distance/time matrix
